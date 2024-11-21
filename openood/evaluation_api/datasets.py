@@ -1,8 +1,9 @@
 import os
 import gdown
 import zipfile
-
-from torch.utils.data import DataLoader
+import torch
+from torch.utils.data import Dataset, DataLoader
+import torchvision.transforms as transforms
 import torchvision as tvs
 if tvs.__version__ >= '0.13':
     tvs_new = True
@@ -419,6 +420,57 @@ def data_setup(data_root, id_data_name):
         download_dataset(dataset, data_root)
 
 
+class GaussianNoiseDataset(Dataset):
+    def __init__(self, base_dataset, noise_mean=0.0, noise_std=0.1):
+        """
+        Args:
+            base_dataset (Dataset): The base dataset to augment.
+            noise_mean (float): Mean of the Gaussian noise.
+            noise_std (float): Standard deviation of the Gaussian noise.
+        """
+        self.base_dataset = base_dataset
+        self.noise_mean = noise_mean
+        self.noise_std = noise_std
+
+    def __len__(self):
+        return len(self.base_dataset)
+
+    def __getitem__(self, idx):
+        # Fetch the sample and label from the base dataset
+        sample, label = self.base_dataset[idx]
+
+        # Add Gaussian noise to the sample
+        if isinstance(sample, torch.Tensor):
+            noise = torch.normal(mean=self.noise_mean, std=self.noise_std, size=sample.size())
+            augmented_sample = sample + noise
+        else:
+            raise TypeError("Samples from the base dataset must be torch.Tensor.")
+
+        return augmented_sample, label
+
+
+def get_gaussian_noise_dataloader(base_dataset, noise_mean=0.0, noise_std=0.1, batch_size=128, shuffle=False):
+    """
+    Returns a DataLoader that applies Gaussian noise augmentation to the base dataset.
+
+    Args:
+        base_dataset (Dataset): The base dataset to augment.
+        noise_mean (float): Mean of the Gaussian noise.
+        noise_std (float): Standard deviation of the Gaussian noise.
+        batch_size (int): Number of samples per batch.
+        shuffle (bool): Whether to shuffle the dataset.
+
+    Returns:
+        DataLoader: A DataLoader that returns batches with Gaussian noise applied.
+    """
+    # Wrap the dataset with GaussianNoiseDataset
+    noise_dataset = GaussianNoiseDataset(base_dataset, noise_mean, noise_std)
+    
+    # Create a DataLoader
+    dataloader = DataLoader(noise_dataset, batch_size=batch_size, shuffle=shuffle)
+    return dataloader
+
+
 def get_id_ood_dataloader(id_name, data_root, preprocessor, **loader_kwargs):
     if 'imagenet' in id_name:
         if tvs_new:
@@ -500,6 +552,20 @@ def get_id_ood_dataloader(id_name, data_root, preprocessor, **loader_kwargs):
                 data_aux_preprocessor=test_standard_preprocessor)
             dataloader = DataLoader(dataset, **loader_kwargs)
             dataloader_dict['ood'][split] = dataloader
+        elif split == 'gauss':
+            dataset = ImglistDataset(
+                name='_'.join((id_name, 'ood', split)),
+                imglist_pth=os.path.join(data_root,
+                                         split_config['imglist_path']),
+                data_dir=os.path.join(data_root, split_config['data_dir']),
+                num_classes=data_info['num_classes'],
+                preprocessor=preprocessor,
+                data_aux_preprocessor=test_standard_preprocessor)
+            
+            dataloader = get_gaussian_noise_dataloader(dataset, **loader_kwargs)
+            #dataloader = DataLoader(dataset, **loader_kwargs)
+            dataloader_dict['ood'][split] = dataloader
+            #-----------------------------------------
         else:
             # dataloaders for nearood, farood
             sub_dataloader_dict = {}
@@ -517,5 +583,7 @@ def get_id_ood_dataloader(id_name, data_root, preprocessor, **loader_kwargs):
                 dataloader = DataLoader(dataset, **loader_kwargs)
                 sub_dataloader_dict[dataset_name] = dataloader
             dataloader_dict['ood'][split] = sub_dataloader_dict
+
+    
 
     return dataloader_dict

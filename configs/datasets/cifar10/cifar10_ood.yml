@@ -10,7 +10,7 @@ ood_dataset:
   batch_size: 128
   shuffle: False
 
-  split_names: [val, nearood, farood]
+  split_names: [val, nearood, farood, gauss]
   val:
     data_dir: ./data/images_classic/
     imglist_pth: ./data/benchmark_imglist/cifar10/val_tin.txt
@@ -36,3 +36,8 @@ ood_dataset:
     place365:
       data_dir: ./data/images_classic/
       imglist_pth: ./data/benchmark_imglist/cifar10/test_places365.txt
+  gauss:
+    datasets: [cifar10]
+    cifar10:
+      data_dir: ./data/images_classic/
+      imglist_pth: ./data/benchmark_imglist/cifar10/val_tin.txt
